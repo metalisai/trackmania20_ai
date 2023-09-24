@@ -20,10 +20,14 @@ import time
 
 from torchrl.data import ListStorage, PrioritizedReplayBuffer
 
+import git
+
 try:
     cpus = multiprocessing.cpu_count()
 except NotImplementedError:
     cpus = 6   # arbitrary default
+
+git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
 
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
@@ -315,7 +319,7 @@ def train_from_pickle(pickle_dir):
             #cap.capture_episode(35, select_action)
         i += 1
 
-    actor.save_model(f"model_pickle_{i}.pth")
+    actor.save_model(f"model_pickle_{git_hash}.pth")
 
 def preload_pickle_to_buffer(pickle_dir):
     global writer
