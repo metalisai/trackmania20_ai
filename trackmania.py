@@ -75,6 +75,9 @@ class ReplayMemory(Dataset):
     def normalize_priorities(self):
         normalized_priorities = self.priorities[:len(self.memory)] / numpy.sum(self.priorities[:len(self.memory)])
         self.normalized_priorities[:len(self.memory)] = normalized_priorities
+        sum = numpy.sum(normalized_priorities)
+        if abs(sum - 1.0) > 0.0001:
+            print(f'error: sum of normalized priorities is {sum}')
         self.normalized_priorities_dirty = False
     
     def push(self, *args, update_weights=True):
@@ -102,8 +105,8 @@ class ReplayMemory(Dataset):
         if self.normalized_priorities_dirty:
             self.normalize_priorities()
 
-        indices = random.sample(range(len(self.memory)), batch_size)
-        #indices = torch.multinomial(torch.tensor(self.normalized_priorities), batch_size, replacement=False)
+        #indices = random.sample(range(len(self.memory)), batch_size)
+        indices = torch.multinomial(torch.tensor(self.normalized_priorities), batch_size, replacement=False)
         samples = [self.memory[i] for i in indices]
 
         max_weight = numpy.max(self.weights)
