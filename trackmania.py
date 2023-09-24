@@ -102,14 +102,14 @@ class ReplayMemory(Dataset):
         if self.normalized_priorities_dirty:
             self.normalize_priorities()
 
-        #indices = random.sample(range(len(self.memory)), batch_size)
-        indices = torch.multinomial(torch.tensor(self.normalized_priorities), batch_size, replacement=False)
+        indices = random.sample(range(len(self.memory)), batch_size)
+        #indices = torch.multinomial(torch.tensor(self.normalized_priorities), batch_size, replacement=False)
         samples = [self.memory[i] for i in indices]
 
         max_weight = numpy.max(self.weights)
         # normalize weights
-        weights = [w / max_weight for w in self.weights[indices]]
-        #weights = [self.weights[i] for i in indices]
+        #weights = [w / max_weight for w in self.weights[indices]]
+        weights = [self.weights[i] for i in indices]
         #weights = [1.0] * batch_size
 
         return samples, indices, weights
