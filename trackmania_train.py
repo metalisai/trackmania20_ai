@@ -48,14 +48,16 @@ img_transform = transforms.Compose([
 
 img_cache = {}
 def collate_gather(batch):
-    def cached_img_transform(img):
+    '''def cached_img_transform(img):
         global img_cache
         if id(img) in img_cache:
             return img_cache[id(img)]
         else:
             transformed = img_transform(img)
             img_cache[id(img)] = transformed
-            return transformed
+            return transformed'''
+    def cached_img_transform(img):
+        return img_transform(img)
     states = [torch.tensor(s) for s in batch.state]
     start = time.time()
     ss_imgs = [cached_img_transform(ss) for ss in batch.screenshot]
