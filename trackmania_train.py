@@ -41,7 +41,7 @@ episode_length = 7.0
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 img_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.Resize((112, 112)),
     transforms.Grayscale(1),
     transforms.ToTensor()
 ])
@@ -359,7 +359,7 @@ if __name__ == "__main__":
     pickle_dir = args.parse_args().from_pickle
     preload_pickle = args.parse_args().preload_pickle
 
-    actor = actor_dqn.DqnActor(trackmania.state_dim, trackmania.num_actions, 224, lr=LEARNING_RATE, device=device, model_path=model_path)
+    actor = actor_dqn.DqnActor(trackmania.state_dim, trackmania.num_actions, 112, lr=LEARNING_RATE, device=device, model_path=model_path)
     #actor = actor_sac.SacActor(trackmania.state_dim, trackmania.num_actions, 224, lr=LEARNING_RATE, device=device, model_path=model_path)
 
     # tensorboard
