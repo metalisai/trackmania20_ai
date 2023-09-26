@@ -30,7 +30,7 @@ except NotImplementedError:
 git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
 
 BATCH_SIZE = 64
-LEARNING_RATE = 0.00001
+LEARNING_RATE = 0.0001
 
 PICKLE_DATA = False
 PICKLE_DIR = "data"
