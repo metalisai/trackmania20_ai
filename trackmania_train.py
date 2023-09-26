@@ -61,7 +61,7 @@ def collate_gather(batch):
     ss_imgs = [cached_img_transform(ss) for ss in batch.screenshot]
     actions = [torch.tensor(a) for a in batch.action]
     #rewards = [torch.tensor([r[0] / 5000.0], dtype=torch.float32) for r in batch.reward]
-    rewards = [torch.tensor([r[0]], dtype=torch.float32) for r in batch.reward]
+    rewards = [torch.tensor([r[0] if r[0] < 500 else r[0]/50.0], dtype=torch.float32) for r in batch.reward]
     next_states = [torch.tensor(ns) for ns in batch.next_state]
     nss_imgs = [cached_img_transform(nss) for nss in batch.next_screenshot]
     #nss_imgs = pool.map(img_transform, batch.next_screenshot, chunksize=1) # slow af
