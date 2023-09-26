@@ -51,7 +51,7 @@ def collate_gather(batch):
     def cached_img_transform(img):
         global img_cache
         if id(img) in img_cache:
-            return img_cache[id(img)]
+            return torch.clone(img_cache[id(img)])
         else:
             transformed = img_transform(img)
             img_cache[id(img)] = transformed
