@@ -49,10 +49,10 @@ class DQN(nn.Module):
         self.fc1 = nn.Linear(state_dim + final_conv_size, num_hidden)
         self.bn1 = nn.BatchNorm1d(num_hidden)
         self.fc2 = nn.Linear(num_hidden, num_hidden)
-        #self.bn2 = nn.BatchNorm1d(num_hidden)
-        #self.fc3 = nn.Linear(num_hidden, num_hidden)
-        #self.bn3 = nn.BatchNorm1d(num_hidden)
-        #self.fc4 = nn.Linear(num_hidden, num_actions)
+        self.bn2 = nn.BatchNorm1d(num_hidden)
+        self.fc3 = nn.Linear(num_hidden, num_hidden)
+        self.bn3 = nn.BatchNorm1d(num_hidden)
+        self.fc4 = nn.Linear(num_hidden, num_actions)
 
 
     def forward(self, state, screen):
@@ -62,12 +62,12 @@ class DQN(nn.Module):
         x = self.bn1(x)
         x = nn.functional.relu(x)
         x = self.fc2(x)
-        #x = self.bn2(x)
-        #x = nn.functional.relu(x)
-        #x = self.fc3(x)
-        #x = self.bn3(x)
-        #x = nn.functional.relu(x)
-        #x = self.fc4(x)
+        x = self.bn2(x)
+        x = nn.functional.relu(x)
+        x = self.fc3(x)
+        x = self.bn3(x)
+        x = nn.functional.relu(x)
+        x = self.fc4(x)
         return x
 
 class SAC(nn.Module):
