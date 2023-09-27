@@ -53,10 +53,10 @@ class HashableImage:
         self.img = img
 
     def __hash__(self):
-        return hash(self.img.tobytes())
+        return id(self.img)
 
     def __eq__(self, other):
-        return self.img.tobytes() == other.img.tobytes()
+        return vars(self.img)['im'] == vars(other.img)['im']
 
 img_cache = {}
 def collate_gather(batch):
