@@ -46,16 +46,28 @@ img_transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
+import hashlib
+
+class HashableImage:
+    def __init__(self, img):
+        self.img = img
+
+    def __hash__(self):
+        return hash(self.img.tobytes())
+
+    def __eq__(self, other):
+        return self.img.tobytes() == other.img.tobytes()
+
 img_cache = {}
 def collate_gather(batch):
     def cached_img_transform(img):
+        h_img = HashableImage(img)
         global img_cache
-        if id(img) in img_cache:
-            return torch.clone(img_cache[id(img)])
+        if h_img in img_cache:
+            return img_cache[h_img]
         else:
-            transformed = img_transform(img)
-            img_cache[id(img)] = transformed
-            return torch.clone(transformed)
+            img_cache[h_img] = img_transform(img)
+            return img_cache[h_img]
     #def cached_img_transform(img):
         #return img_transform(img)
     states = [torch.tensor(s) for s in batch.state]
@@ -120,7 +132,7 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
     global memory
     global writer
     global step
-    global img_cache
+    #global img_cache
 
     print("training...")
     losses = []
