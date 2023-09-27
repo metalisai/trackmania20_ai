@@ -55,7 +55,9 @@ def collate_gather(batch):
         else:
             transformed = img_transform(img)
             img_cache[id(img)] = transformed
-            return transformed
+            return torch.clone(transformed)
+    #def cached_img_transform(img):
+        #return img_transform(img)
     states = [torch.tensor(s) for s in batch.state]
     start = time.time()
     ss_imgs = [cached_img_transform(ss) for ss in batch.screenshot]
@@ -118,6 +120,7 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
     global memory
     global writer
     global step
+    global img_cache
 
     print("training...")
     losses = []
