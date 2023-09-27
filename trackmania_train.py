@@ -55,7 +55,7 @@ class HashableImage:
     def __hash__(self):
         return id(self.img)
 
-    def __eq__(self, other):
+    def __eq__(self, other): # theoretically could collide, but comparing the actual images is too slow to be useful
         return vars(self.img)['im'] == vars(other.img)['im']
 
 img_cache = {}
@@ -75,7 +75,7 @@ def collate_gather(batch):
     ss_imgs = [cached_img_transform(ss) for ss in batch.screenshot]
     actions = [torch.tensor(a) for a in batch.action]
     #rewards = [torch.tensor([r[0] / 5000.0], dtype=torch.float32) for r in batch.reward]
-    rewards = [torch.tensor([r[0] if r[0] < 500 else r[0]/50.0], dtype=torch.float32) for r in batch.reward]
+    rewards = [torch.tensor([numpy.sign(r[0])*(r[0]*r[0]) if r[0] < 100 else r[0]/50.0], dtype=torch.float32) for r in batch.reward]
     next_states = [torch.tensor(ns) for ns in batch.next_state]
     nss_imgs = [cached_img_transform(nss) for nss in batch.next_screenshot]
     #nss_imgs = pool.map(img_transform, batch.next_screenshot, chunksize=1) # slow af
