@@ -159,13 +159,14 @@ def capture_once():
     return img
 
 class TrackmaniaCapture:
-    def __init__(self, time_step=0.1):
+    def __init__(self, time_step=0.1, frame_stack=2):
         self.next_checkpoint = 0
         self.finished = False
         self.barrier = None
         self.reward = 0.0
         self.total_reward = 0.0
         self.time_step = time_step
+        self.frame_stack = frame_stack
 
         self.cur_t = 0.0
 
@@ -186,6 +187,8 @@ class TrackmaniaCapture:
         self.last_distance = float('inf')
 
         self.last_checkpoint_time = time.time()
+
+        self.frame_history = []
 
         self.checkPoints = []
         for cp in trackInfo['Checkpoints']:
@@ -366,6 +369,12 @@ class TrackmaniaCapture:
         image = Image.frombytes("RGB", (WIDTH, HEIGHT), raw.data, "raw", "BGRX")
         # downscale, nearest neighbor
         image = image.resize((OUTPUT_WIDTH, OUTPUT_HEIGHT), Image.NEAREST)
+        if len(self.frame_history) < self.frame_stack:
+            for i in range(self.frame_stack):
+                self.frame_history.append(image)
+        for i in range(self.frame_stack-1):
+            self.frame_history[i] = self.frame_history[i+1]
+        self.frame_history[self.frame_stack-1] = image
         return image
 
     def capture_episode(self, episode_duration, select_action):
@@ -389,7 +398,7 @@ class TrackmaniaCapture:
         else:
             prev_sc = self.capture_screen()
 
-        action = select_action(prev_state, prev_sc, self.cur_t)
+        action = select_action(prev_state, self.frame_history, self.cur_t)
         if not (isinstance(action, list) or isinstance(action, numpy.ndarray)) or not len(action) == 1 or torch.is_tensor(action[0]):
             print("ACTION SHOULD BE LIST WITH ONE ELEMENT")
         if not self.finished:
@@ -444,7 +453,7 @@ class TrackmaniaCapture:
 
             prev_state = next_state
             prev_sc = next_sc
-            action = select_action(prev_state, prev_sc, self.cur_t)
+            action = select_action(prev_state, self.frame_history, self.cur_t)
             if not (isinstance(action, list) or isinstance(action, numpy.ndarray)) or not len(action) == 1 or torch.is_tensor(action[0]):
                 print(f"ACTION SHOULD BE LIST WITH ONE ELEMENT ({action})")
             self.set_state(action)

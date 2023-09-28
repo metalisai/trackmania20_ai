@@ -30,11 +30,11 @@ except NotImplementedError:
 git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
 
 BATCH_SIZE = 64
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0003
 
-FRAME_STACK = 2
+FRAME_STACK = 4
 
-PICKLE_DATA = True
+PICKLE_DATA = False
 PICKLE_DIR = "fpdata"
 PICKLE_SIZE = 2000
 
@@ -264,7 +264,7 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
 
     '''if last_data is not None:
         img_size = last_data[1][0].shape[1]
-        writer.add_images("screenshots", last_data[1][0].view(2, 1, img_size, img_size), step)'''
+        writer.add_images("screenshots", last_data[1][0].view(FRAME_STACK, 1, img_size, img_size), step)'''
 
     img_cache = {}
 
@@ -284,13 +284,13 @@ def train_online():
 
     step = 0
 
-    cap = trackmania.TrackmaniaCapture(time_step=0.1)
+    cap = trackmania.TrackmaniaCapture(time_step=0.1, frame_stack=FRAME_STACK)
     cap.start_state_capture()
     time.sleep(1)
 
-    def select_action(state, screenshot, t):
-        img = img_transform(screenshot).unsqueeze(0)
-        return actor.select_action(state, img, t)
+    def select_action(state, screenshots, t):
+        imgs = [img_transform(screenshot).unsqueeze(0) for screenshot in screenshots]
+        return actor.select_action(state, imgs, t)
 
     ep_memory, total_reward = cap.capture_episode(episode_length, select_action)
 
@@ -384,6 +384,7 @@ if __name__ == "__main__":
     args.add_argument("--episode", type=int, default=0)
     args.add_argument("--from_pickle", type=str, default=None)
     args.add_argument("--preload_pickle", type=str, default=None)
+    args.add_argument("--eps", type=float, default=None)
 
     model_path = args.parse_args().load
     episode = args.parse_args().episode
@@ -391,6 +392,8 @@ if __name__ == "__main__":
     preload_pickle = args.parse_args().preload_pickle
 
     actor = actor_dqn.DqnActor(trackmania.state_dim, trackmania.num_actions, 112, frame_stack=FRAME_STACK, lr=LEARNING_RATE, device=device, model_path=model_path)
+    if args.parse_args().eps is not None:
+        actor.set_epsilon(args.parse_args().eps)
     #actor = actor_sac.SacActor(trackmania.state_dim, trackmania.num_actions, 224, lr=LEARNING_RATE, device=device, model_path=model_path)
 
     # tensorboard

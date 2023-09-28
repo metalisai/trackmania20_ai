@@ -42,6 +42,9 @@ class DqnActor:
         self.episode = 0
         self.randomness = 0.8
 
+    def set_epsilon(self, epsilon):
+        self.randomness = epsilon
+
     def set_episode(self, ep):
         self.episode = ep
         if ep > 50:
@@ -126,7 +129,7 @@ class DqnActor:
         print(f"Saving model to {path}")
         torch.save(self.policy_net.state_dict(), path)
 
-    def select_action(self, state, screenshot, t):
+    def select_action(self, state, screenshots, t):
         global biased_action_ep, biased_action
         if (self.episode % 2 == 0 and random.random() < self.randomness) or random.random() < 0.05:
             # multinomial distribution
@@ -142,9 +145,11 @@ class DqnActor:
             with torch.no_grad():
                 device = self.device
                 state = torch.tensor(state).unsqueeze(0).to(device)
-                screenshot = screenshot.to(device)
+                scat = torch.cat(screenshots, dim=1).to(device)
+                #print(f"scat {scat.shape}")
+                #screenshot = screenshot.to(device)
                 self.active_net.eval()
-                ret = self.active_net(state, screenshot).max(1)[1].view(1, 1)
+                ret = self.active_net(state, scat).max(1)[1].view(1, 1)
                 # to array  
                 ret = ret.cpu().numpy()
                 return ret[0]
