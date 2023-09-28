@@ -250,6 +250,10 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
         writer.add_scalar("loss", loss, step)
         #writer.add_scalar("bellman loss", bm_loss, step)
         #writer.add_scalar("cql loss", cql_loss, step)
+
+        if entry[6]:
+            frame_history = []
+
     if len(losses) > 0:
         avg_loss = sum(losses) / len(losses)
         step += 1
