@@ -6,14 +6,10 @@ import torch
 # input_shape: (batch_size, 3, 224, 224)
 # output_shape: (batch_size, 28*28)
 class ConvNet(nn.Module):
-    def __init__(self, grayscale=False):
+    def __init__(self, frame_stack=2):
         super(ConvNet, self).__init__()
         
-        if grayscale:
-            in_channels = 1
-        else:
-            in_channels = 3
-        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=7, stride=2, padding=3)
+        self.conv1 = nn.Conv2d(frame_stack, 32, kernel_size=7, stride=2, padding=3)
         self.bn1 = nn.BatchNorm2d(32)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2)
         self.bn2 = nn.BatchNorm2d(64)
@@ -37,6 +33,64 @@ class ConvNet(nn.Module):
         x = nn.functional.relu(x)
         x = x.view(x.size(0), -1)
         return x
+
+class DuelingDQN(nn.Module):
+    def __init__(self, state_dim, image_dim, frame_stack, num_actions, num_hidden):
+        super(DuelingDQN, self).__init__()
+        self.num_actions = num_actions
+
+        self.conv = ConvNet(frame_stack=frame_stack)
+        final_conv_size = self.conv(torch.zeros(1, frame_stack, image_dim, image_dim)).shape[1]
+
+        # state value branch
+        self.v_fc1 = nn.Linear(state_dim + final_conv_size, num_hidden)
+        self.v_bn1 = nn.BatchNorm1d(num_hidden)
+        self.v_fc2 = nn.Linear(num_hidden, num_hidden)
+        self.v_bn2 = nn.BatchNorm1d(num_hidden)
+        self.v_fc3 = nn.Linear(num_hidden, num_hidden)
+        self.v_bn3 = nn.BatchNorm1d(num_hidden)
+        self.v_fc4 = nn.Linear(num_hidden, 1)
+
+        # advantage branch
+        self.a_fc1 = nn.Linear(state_dim + final_conv_size, num_hidden)
+        self.a_bn1 = nn.BatchNorm1d(num_hidden)
+        self.a_fc2 = nn.Linear(num_hidden, num_hidden)
+        self.a_bn2 = nn.BatchNorm1d(num_hidden)
+        self.a_fc3 = nn.Linear(num_hidden, num_hidden)
+        self.a_bn3 = nn.BatchNorm1d(num_hidden)
+        self.a_fc4 = nn.Linear(num_hidden, num_actions)
+
+    def forward(self, state, screen):
+        x = self.conv(screen)
+        x = torch.cat([x, state], dim=1)
+
+        # state value branch
+        v = self.v_fc1(x)
+        v = self.v_bn1(v)
+        v = nn.functional.relu(v)
+        v = self.v_fc2(v)
+        v = self.v_bn2(v)
+        v = nn.functional.relu(v)
+        v = self.v_fc3(v)
+        v = self.v_bn3(v)
+        v = nn.functional.relu(v)
+        v = self.v_fc4(v)
+
+        # advantage branch
+        a = self.a_fc1(x)
+        a = self.a_bn1(a)
+        a = nn.functional.relu(a)
+        a = self.a_fc2(a)
+        a = self.a_bn2(a)
+        a = nn.functional.relu(a)
+        a = self.a_fc3(a)
+        a = self.a_bn3(a)
+        a = nn.functional.relu(a)
+        a = self.a_fc4(a)
+
+        # combine
+        q = v + a - a.mean(dim=1, keepdim=True)
+        return q
 
 class DQN(nn.Module):
     def __init__(self, state_dim, image_dim, num_actions, num_hidden, grayscale=False):

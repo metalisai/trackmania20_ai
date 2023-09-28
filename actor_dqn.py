@@ -7,17 +7,27 @@ GAMMA = 0.99
 TAU = 0.0001
 
 class DqnActor:
-    def __init__(self, state_dim, num_actions, image_dim, lr=0.0001, device="cpu", model_path=None):
-        policy_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM, grayscale=True).to(device)
+    def __init__(self, state_dim, num_actions, image_dim, frame_stack=2, lr=0.0001, device="cpu", model_path=None, dueling=True):
+
+        if dueling:
+            policy_net = models.DuelingDQN(state_dim=state_dim, image_dim=image_dim, frame_stack=frame_stack, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
+        else:
+            policy_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
         if model_path is not None:
             state_dict = torch.load(model_path)
             policy_net.load_state_dict(state_dict)
             print(f"loaded model from {model_path}")
 
-        target_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM, grayscale=True).to(device)
+        if dueling:
+            target_net = models.DuelingDQN(state_dim=state_dim, image_dim=image_dim, frame_stack=frame_stack, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
+        else:
+            target_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
         target_net.load_state_dict(policy_net.state_dict())
 
-        active_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM, grayscale=True).to(device)
+        if dueling:
+            active_net = models.DuelingDQN(state_dim=state_dim, image_dim=image_dim, frame_stack=frame_stack, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
+        else:
+            active_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
         active_net.load_state_dict(policy_net.state_dict())
 
         self.device = device
@@ -31,6 +41,9 @@ class DqnActor:
 
         self.episode = 0
         self.randomness = 0.8
+
+    def set_epsilon(self, epsilon):
+        self.randomness = epsilon
 
     def set_episode(self, ep):
         self.episode = ep
@@ -116,7 +129,7 @@ class DqnActor:
         print(f"Saving model to {path}")
         torch.save(self.policy_net.state_dict(), path)
 
-    def select_action(self, state, screenshot, t):
+    def select_action(self, state, screenshots, t):
         global biased_action_ep, biased_action
         if (self.episode % 2 == 0 and random.random() < self.randomness) or random.random() < 0.05:
             # multinomial distribution
@@ -132,9 +145,11 @@ class DqnActor:
             with torch.no_grad():
                 device = self.device
                 state = torch.tensor(state).unsqueeze(0).to(device)
-                screenshot = screenshot.to(device)
+                scat = torch.cat(screenshots, dim=1).to(device)
+                #print(f"scat {scat.shape}")
+                #screenshot = screenshot.to(device)
                 self.active_net.eval()
-                ret = self.active_net(state, screenshot).max(1)[1].view(1, 1)
+                ret = self.active_net(state, scat).max(1)[1].view(1, 1)
                 # to array  
                 ret = ret.cpu().numpy()
                 return ret[0]

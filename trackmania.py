@@ -42,7 +42,7 @@ Transition = namedtuple('Transition', ('state', 'screenshot', 'action', 'next_st
 
 state_dim = 8
 
-trackInfo = json.load(open('tracks/track2.json', 'r'))
+trackInfo = json.load(open('tracks/track3.json', 'r'))
 
 #os.nice(-20)
 
@@ -75,6 +75,9 @@ class ReplayMemory(Dataset):
     def normalize_priorities(self):
         normalized_priorities = self.priorities[:len(self.memory)] / numpy.sum(self.priorities[:len(self.memory)])
         self.normalized_priorities[:len(self.memory)] = normalized_priorities
+        sum = numpy.sum(normalized_priorities)
+        if abs(sum - 1.0) > 0.0001:
+            print(f'error: sum of normalized priorities is {sum}')
         self.normalized_priorities_dirty = False
     
     def push(self, *args, update_weights=True):
@@ -156,13 +159,14 @@ def capture_once():
     return img
 
 class TrackmaniaCapture:
-    def __init__(self, time_step=0.1):
+    def __init__(self, time_step=0.1, frame_stack=2):
         self.next_checkpoint = 0
         self.finished = False
         self.barrier = None
         self.reward = 0.0
         self.total_reward = 0.0
         self.time_step = time_step
+        self.frame_stack = frame_stack
 
         self.cur_t = 0.0
 
@@ -182,6 +186,10 @@ class TrackmaniaCapture:
         self.min_distance = float('inf')
         self.last_distance = float('inf')
 
+        self.last_checkpoint_time = time.time()
+
+        self.frame_history = []
+
         self.checkPoints = []
         for cp in trackInfo['Checkpoints']:
             cp = numpy.array([cp['X'], cp['Y'], cp['Z']])
@@ -191,11 +199,12 @@ class TrackmaniaCapture:
         self.checkPoints.append(finish)
 
     def checkpoint_reached(self):
-        base_reward = 3000.0 if self.next_checkpoint == len(self.checkPoints) else 1000.0
-        self.reward += base_reward - 20.0 * self.cur_t if self.next_checkpoint != len(self.checkPoints) else base_reward - 50.0 * self.cur_t
+        base_reward = 30.0 if self.next_checkpoint == len(self.checkPoints)-1 else 10.0
+        self.reward += base_reward - 0.2 * self.cur_t if self.next_checkpoint != len(self.checkPoints) else base_reward - 0.5 * self.cur_t
         print(f'checkpoint {self.next_checkpoint} reached reward: {self.reward}')
         self.next_checkpoint += 1
         self.min_distance = float('inf')
+        self.last_checkpoint_time = time.time()
         if self.next_checkpoint == len(self.checkPoints):
             self.next_checkpoint = 0
             print("lap completed")
@@ -244,17 +253,17 @@ class TrackmaniaCapture:
                 ni = self.next_checkpoint
                 distToNextCheckPoint = ((pos[0]-cps[ni][0])**2 + (pos[1]-cps[ni][1])**2 + (pos[2]-cps[ni][2])**2)**0.5
 
-                if distToNextCheckPoint < self.min_distance:
+                if distToNextCheckPoint < self.min_distance and self.next_checkpoint != len(cps)-1:
                     diff = self.min_distance - distToNextCheckPoint
                     if diff < 10.0:
-                        self.reward += max(0.0, diff)
+                        self.reward += max(0.0, diff*(unpacked[0]/100.0))
                     self.min_distance = distToNextCheckPoint
 
                 # reward for speed
                 if unpacked[0] > 5.0:
-                    self.reward += 0.1
+                    self.reward += 0.02
                 else:
-                    self.reward -= 1.1
+                    self.reward -= 0.01
 
                 cpDist = 16.0
 
@@ -360,10 +369,18 @@ class TrackmaniaCapture:
         image = Image.frombytes("RGB", (WIDTH, HEIGHT), raw.data, "raw", "BGRX")
         # downscale, nearest neighbor
         image = image.resize((OUTPUT_WIDTH, OUTPUT_HEIGHT), Image.NEAREST)
+        if len(self.frame_history) < self.frame_stack:
+            for i in range(self.frame_stack):
+                self.frame_history.append(image)
+        for i in range(self.frame_stack-1):
+            self.frame_history[i] = self.frame_history[i+1]
+        self.frame_history[self.frame_stack-1] = image
         return image
 
     def capture_episode(self, episode_duration, select_action):
         memory = ReplayMemory(10000)
+
+        last_checkpoint_time = time.time()
 
         global last_screenshot
         global t
@@ -381,7 +398,7 @@ class TrackmaniaCapture:
         else:
             prev_sc = self.capture_screen()
 
-        action = select_action(prev_state, prev_sc, self.cur_t)
+        action = select_action(prev_state, self.frame_history, self.cur_t)
         if not (isinstance(action, list) or isinstance(action, numpy.ndarray)) or not len(action) == 1 or torch.is_tensor(action[0]):
             print("ACTION SHOULD BE LIST WITH ONE ELEMENT")
         if not self.finished:
@@ -436,19 +453,26 @@ class TrackmaniaCapture:
 
             prev_state = next_state
             prev_sc = next_sc
-            action = select_action(prev_state, prev_sc, self.cur_t)
+            action = select_action(prev_state, self.frame_history, self.cur_t)
             if not (isinstance(action, list) or isinstance(action, numpy.ndarray)) or not len(action) == 1 or torch.is_tensor(action[0]):
                 print(f"ACTION SHOULD BE LIST WITH ONE ELEMENT ({action})")
             self.set_state(action)
 
+            time_since_last_checkpoint = time.time() - self.last_checkpoint_time
+
             self.cur_t += self.time_step
-            if not finished and self.cur_t < episode_duration:
+            if time_since_last_checkpoint > 15.0:
+                print("episode finished by checkpoint timeout")
+                memory.push(next_state, next_sc, [0], next_state, next_sc, [-10.0], 1.0)
+                self.set_state(0)
+                self.barrier.wait()
+            elif not finished and self.cur_t < episode_duration:
                 start = time.time() - dif_from_timestep
                 timer = Timer(self.time_step - dif_from_timestep, end_step)
                 timer.start()
             elif finished:
                 print("episode finished by finish line")
-                memory.push(next_state, next_sc, [0], next_state, next_sc, [0.0], 1.0)
+                memory.push(next_state, next_sc, [0], next_state, next_sc, [20.0], 1.0)
                 self.set_state(0)
                 self.barrier.wait()
             else:
@@ -466,6 +490,7 @@ class TrackmaniaCapture:
 
         print("waiting end of episode")
         self.barrier.wait()
+        print("ep finished, total reward: " + str(self.total_reward))
         timer.cancel()
 
         return memory, self.total_reward
@@ -478,6 +503,7 @@ class TrackmaniaCapture:
         self.total_reward = 0.0
         self.reward_distance = 0.0
         self.min_distance = float('inf')
+        self.last_checkpoint_time = time.time()
         if self.finished:
             # release all keys
             time.sleep(5.0)
