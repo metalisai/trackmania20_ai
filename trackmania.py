@@ -42,7 +42,7 @@ Transition = namedtuple('Transition', ('state', 'screenshot', 'action', 'next_st
 
 state_dim = 8
 
-trackInfo = json.load(open('tracks/track2.json', 'r'))
+trackInfo = json.load(open('tracks/track3.json', 'r'))
 
 #os.nice(-20)
 
@@ -185,6 +185,8 @@ class TrackmaniaCapture:
         self.min_distance = float('inf')
         self.last_distance = float('inf')
 
+        self.last_checkpoint_time = time.time()
+
         self.checkPoints = []
         for cp in trackInfo['Checkpoints']:
             cp = numpy.array([cp['X'], cp['Y'], cp['Z']])
@@ -194,11 +196,12 @@ class TrackmaniaCapture:
         self.checkPoints.append(finish)
 
     def checkpoint_reached(self):
-        base_reward = 3000.0 if self.next_checkpoint == len(self.checkPoints) else 1000.0
-        self.reward += base_reward - 20.0 * self.cur_t if self.next_checkpoint != len(self.checkPoints) else base_reward - 50.0 * self.cur_t
+        base_reward = 30.0 if self.next_checkpoint == len(self.checkPoints)-1 else 10.0
+        self.reward += base_reward - 0.2 * self.cur_t if self.next_checkpoint != len(self.checkPoints) else base_reward - 0.5 * self.cur_t
         print(f'checkpoint {self.next_checkpoint} reached reward: {self.reward}')
         self.next_checkpoint += 1
         self.min_distance = float('inf')
+        self.last_checkpoint_time = time.time()
         if self.next_checkpoint == len(self.checkPoints):
             self.next_checkpoint = 0
             print("lap completed")
@@ -247,17 +250,17 @@ class TrackmaniaCapture:
                 ni = self.next_checkpoint
                 distToNextCheckPoint = ((pos[0]-cps[ni][0])**2 + (pos[1]-cps[ni][1])**2 + (pos[2]-cps[ni][2])**2)**0.5
 
-                if distToNextCheckPoint < self.min_distance:
+                if distToNextCheckPoint < self.min_distance and self.next_checkpoint != len(cps)-1:
                     diff = self.min_distance - distToNextCheckPoint
                     if diff < 10.0:
-                        self.reward += max(0.0, diff)
+                        self.reward += max(0.0, diff*(unpacked[0]/100.0))
                     self.min_distance = distToNextCheckPoint
 
                 # reward for speed
                 if unpacked[0] > 5.0:
-                    self.reward += 0.1
+                    self.reward += 0.02
                 else:
-                    self.reward -= 1.1
+                    self.reward -= 0.01
 
                 cpDist = 16.0
 
@@ -368,6 +371,8 @@ class TrackmaniaCapture:
     def capture_episode(self, episode_duration, select_action):
         memory = ReplayMemory(10000)
 
+        last_checkpoint_time = time.time()
+
         global last_screenshot
         global t
         t = 0.0
@@ -444,14 +449,21 @@ class TrackmaniaCapture:
                 print(f"ACTION SHOULD BE LIST WITH ONE ELEMENT ({action})")
             self.set_state(action)
 
+            time_since_last_checkpoint = time.time() - self.last_checkpoint_time
+
             self.cur_t += self.time_step
-            if not finished and self.cur_t < episode_duration:
+            if time_since_last_checkpoint > 15.0:
+                print("episode finished by checkpoint timeout")
+                memory.push(next_state, next_sc, [0], next_state, next_sc, [-10.0], 1.0)
+                self.set_state(0)
+                self.barrier.wait()
+            elif not finished and self.cur_t < episode_duration:
                 start = time.time() - dif_from_timestep
                 timer = Timer(self.time_step - dif_from_timestep, end_step)
                 timer.start()
             elif finished:
                 print("episode finished by finish line")
-                memory.push(next_state, next_sc, [0], next_state, next_sc, [0.0], 1.0)
+                memory.push(next_state, next_sc, [0], next_state, next_sc, [20.0], 1.0)
                 self.set_state(0)
                 self.barrier.wait()
             else:
@@ -469,6 +481,7 @@ class TrackmaniaCapture:
 
         print("waiting end of episode")
         self.barrier.wait()
+        print("ep finished, total reward: " + str(self.total_reward))
         timer.cancel()
 
         return memory, self.total_reward
@@ -481,6 +494,7 @@ class TrackmaniaCapture:
         self.total_reward = 0.0
         self.reward_distance = 0.0
         self.min_distance = float('inf')
+        self.last_checkpoint_time = time.time()
         if self.finished:
             # release all keys
             time.sleep(5.0)

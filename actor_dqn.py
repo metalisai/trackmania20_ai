@@ -7,17 +7,27 @@ GAMMA = 0.99
 TAU = 0.0001
 
 class DqnActor:
-    def __init__(self, state_dim, num_actions, image_dim, lr=0.0001, device="cpu", model_path=None):
-        policy_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM, grayscale=True).to(device)
+    def __init__(self, state_dim, num_actions, image_dim, frame_stack=2, lr=0.0001, device="cpu", model_path=None, dueling=True):
+
+        if dueling:
+            policy_net = models.DuelingDQN(state_dim=state_dim, image_dim=image_dim, frame_stack=frame_stack, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
+        else:
+            policy_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
         if model_path is not None:
             state_dict = torch.load(model_path)
             policy_net.load_state_dict(state_dict)
             print(f"loaded model from {model_path}")
 
-        target_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM, grayscale=True).to(device)
+        if dueling:
+            target_net = models.DuelingDQN(state_dim=state_dim, image_dim=image_dim, frame_stack=frame_stack, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
+        else:
+            target_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
         target_net.load_state_dict(policy_net.state_dict())
 
-        active_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM, grayscale=True).to(device)
+        if dueling:
+            active_net = models.DuelingDQN(state_dim=state_dim, image_dim=image_dim, frame_stack=frame_stack, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
+        else:
+            active_net = models.DQN(state_dim=state_dim, image_dim=image_dim, num_actions=num_actions, num_hidden=HIDDEN_DIM).to(device)
         active_net.load_state_dict(policy_net.state_dict())
 
         self.device = device

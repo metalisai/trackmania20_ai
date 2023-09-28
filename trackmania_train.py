@@ -29,14 +29,16 @@ except NotImplementedError:
 
 git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
 
-BATCH_SIZE = 128
-LEARNING_RATE = 0.0001
+BATCH_SIZE = 64
+LEARNING_RATE = 0.001
 
-PICKLE_DATA = False
-PICKLE_DIR = "data"
+FRAME_STACK = 2
+
+PICKLE_DATA = True
+PICKLE_DIR = "fpdata"
 PICKLE_SIZE = 2000
 
-episode_length = 7.0
+episode_length = 90.0
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -72,12 +74,12 @@ def collate_gather(batch):
         #return img_transform(img)
     states = [torch.tensor(s) for s in batch.state]
     start = time.time()
-    ss_imgs = [cached_img_transform(ss) for ss in batch.screenshot]
+    ss_imgs = [torch.cat([cached_img_transform(ss) for ss in framestack], dim=0) for framestack in batch.screenshot]
     actions = [torch.tensor(a) for a in batch.action]
     #rewards = [torch.tensor([r[0] / 5000.0], dtype=torch.float32) for r in batch.reward]
     rewards = [torch.tensor([r[0] if r[0] < 500 else r[0]/50.0], dtype=torch.float32) for r in batch.reward]
     next_states = [torch.tensor(ns) for ns in batch.next_state]
-    nss_imgs = [cached_img_transform(nss) for nss in batch.next_screenshot]
+    nss_imgs = [torch.cat([cached_img_transform(nss) for nss in framestack], dim=0) for framestack in batch.next_screenshot]
     #nss_imgs = pool.map(img_transform, batch.next_screenshot, chunksize=1) # slow af
     dones = [torch.tensor(d) for d in batch.done]
     return states, ss_imgs, actions, rewards, next_states, nss_imgs, dones
@@ -132,10 +134,13 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
     global memory
     global writer
     global step
-    #global img_cache
+    global img_cache
+    global frame_history
 
     print("training...")
     losses = []
+
+    last_data = None
 
     def remove_tensors(entry):
         if isinstance(entry, list) and isinstance(entry[0], torch.Tensor):
@@ -173,6 +178,24 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
         entry = ep_memory.memory[t]
         # if there is a tensor, turn it into normal array
         entry = [remove_tensors(e) for e in entry]
+
+        # fill frame history with current frame if it's empty
+        if len(frame_history) < FRAME_STACK:
+            for _ in range(FRAME_STACK):
+                frame_history.append(entry[1])
+
+        # shift frame history and add current frame
+        for i in range(FRAME_STACK-1):
+            frame_history[i] = frame_history[i+1]
+        frame_history[FRAME_STACK-1] = entry[1]
+        entry[1] = frame_history.copy()
+
+        # do the same for next frame history
+        next_history = frame_history.copy()
+        for i in range(FRAME_STACK-1):
+            next_history[i] = next_history[i+1]
+        next_history[FRAME_STACK-1] = entry[4]
+        entry[4] = next_history.copy()
 
         if isinstance(memory, PrioritizedReplayBuffer):
             memory.add(entry)
@@ -212,6 +235,7 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
             #print("i ", indices)
             batch = trackmania.Transition(*zip(*transitions))
             batch = collate_gather(batch)
+            last_data = batch
             batch = collate_stack(batch)
 
             #loss, bm_loss, cql_loss = optimize_model(batch)
@@ -233,6 +257,10 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
         avg_loss = 0
     last_loss = avg_loss
     print(f"avg loss {avg_loss}")
+
+    '''if last_data is not None:
+        img_size = last_data[1][0].shape[1]
+        writer.add_images("screenshots", last_data[1][0].view(2, 1, img_size, img_size), step)'''
 
     img_cache = {}
 
@@ -281,24 +309,6 @@ def train_online():
 
         if i_ep % 10 == 0:
             actor.save_model(f"model_{episode}.pth")
-
-        if episode > 20:
-            episode_length = 10
-        if episode > 50:
-            episode_length = 15
-            randomness = 0.5
-        if episode > 100:
-            episode_length = 20
-            randomness = 0.4
-        if episode > 150:
-            episode_length = 25
-            randomness = 0.3
-        if episode > 200:
-            episode_length = 30
-            randomness = 0.2
-        if episode > 250:
-            episode_length = 30
-            randomness = 0.1
 
         #cap.memory_to_video(ep_memory, f'episode{episode}.mp4')
 
@@ -363,6 +373,8 @@ if __name__ == "__main__":
     last_loss = 0
     pickle_data = []
 
+    frame_history = []
+
     args = argparse.ArgumentParser()
     args.add_argument("--load", type=str, default=None)
     args.add_argument("--episode", type=int, default=0)
@@ -374,7 +386,7 @@ if __name__ == "__main__":
     pickle_dir = args.parse_args().from_pickle
     preload_pickle = args.parse_args().preload_pickle
 
-    actor = actor_dqn.DqnActor(trackmania.state_dim, trackmania.num_actions, 112, lr=LEARNING_RATE, device=device, model_path=model_path)
+    actor = actor_dqn.DqnActor(trackmania.state_dim, trackmania.num_actions, 112, frame_stack=FRAME_STACK, lr=LEARNING_RATE, device=device, model_path=model_path)
     #actor = actor_sac.SacActor(trackmania.state_dim, trackmania.num_actions, 224, lr=LEARNING_RATE, device=device, model_path=model_path)
 
     # tensorboard
