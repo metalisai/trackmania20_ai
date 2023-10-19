@@ -13,6 +13,7 @@ from pynput.keyboard import Key, Controller
 import torch
 from Xlib import display, X
 from torch.utils.data import Dataset
+import math
 
 from collections import namedtuple
 
@@ -112,8 +113,8 @@ class ReplayMemory(Dataset):
         max_weight = numpy.max(self.weights)
         # normalize weights
         #weights = [w / max_weight for w in self.weights[indices]]
-        weights = [self.weights[i] for i in indices]
-        #weights = [1.0] * batch_size
+        #weights = [self.weights[i] for i in indices]
+        weights = [1.0] * batch_size
 
         return samples, indices, weights
 
@@ -159,7 +160,7 @@ def capture_once():
     return img
 
 class TrackmaniaCapture:
-    def __init__(self, time_step=0.1, frame_stack=2):
+    def __init__(self, time_step=0.1, frame_stack=2, manual=False):
         self.next_checkpoint = 0
         self.finished = False
         self.barrier = None
@@ -167,6 +168,7 @@ class TrackmaniaCapture:
         self.total_reward = 0.0
         self.time_step = time_step
         self.frame_stack = frame_stack
+        self.manual = manual
 
         self.cur_t = 0.0
 
@@ -185,6 +187,9 @@ class TrackmaniaCapture:
 
         self.min_distance = float('inf')
         self.last_distance = float('inf')
+        self.last_speed = 0.0
+        self.last_time = time.time()
+        self.start_time = time.time()
 
         self.last_checkpoint_time = time.time()
 
@@ -231,6 +236,8 @@ class TrackmaniaCapture:
                 state = (unpacked[0], unpacked[1], unpacked[5], unpacked[6], unpacked[7], unpacked[9], unpacked[10])
                 pos = (unpacked[2], unpacked[3], unpacked[4])
 
+                cur_time = time.time()
+
                 if self.reward_distance == 0.0:
                     self.update_reward_distance(pos)
 
@@ -253,17 +260,42 @@ class TrackmaniaCapture:
                 ni = self.next_checkpoint
                 distToNextCheckPoint = ((pos[0]-cps[ni][0])**2 + (pos[1]-cps[ni][1])**2 + (pos[2]-cps[ni][2])**2)**0.5
 
-                if distToNextCheckPoint < self.min_distance and self.next_checkpoint != len(cps)-1:
-                    diff = self.min_distance - distToNextCheckPoint
-                    if diff < 10.0:
-                        self.reward += max(0.0, diff*(unpacked[0]/100.0))
-                    self.min_distance = distToNextCheckPoint
+                # rewards
+                if time.time() - self.start_time > 1.0 and not self.finished:
+                    # reward for speed
+                    if distToNextCheckPoint < self.min_distance and self.next_checkpoint != len(cps)-1:
+                        # diff not inf
+                        diff = self.min_distance - distToNextCheckPoint
+                        if not math.isinf(diff):
+                            freward = max(0.0, diff*(unpacked[0]/500.0))
+                            freward = min(0.5, freward)
+                            self.reward += freward
+                        self.min_distance = distToNextCheckPoint
 
-                # reward for speed
-                if unpacked[0] > 5.0:
-                    self.reward += 0.02
-                else:
-                    self.reward -= 0.01
+                    # reward for not standing still
+                    if unpacked[0] > 5.0:
+                        self.reward += 0.002
+                    else:
+                        self.reward -= 0.001
+
+                    # penalty for crashing
+                    speed_dif = unpacked[0] - self.last_speed
+                    time_diff = cur_time - self.last_time
+                    if time_diff > 0.0:
+                        acceleration = speed_dif / time_diff
+                    else:
+                        acceleration = 0.0
+                    if acceleration < -100.0: # braking is around -60
+                        cpen = (acceleration*acceleration) / (100000.0)
+                        cpen = min(10.0, cpen)
+                        self.reward -= cpen
+                        print(f'crash penalty: -{cpen}')
+                    elif state[4] > 0.1: # small reward for braking
+                        brwrd = min(1.0, unpacked[0]/100.0)*0.02
+                        #print(f'brake reward: {brwrd}')
+                        self.reward += brwrd
+
+                self.last_speed = unpacked[0]
 
                 cpDist = 16.0
 
@@ -276,6 +308,7 @@ class TrackmaniaCapture:
                 #print(f'distance to next checkpoint: {distToNextCheckPoint}')
 
                 self.last_state = state
+                self.last_time = cur_time
 
     def start_state_capture(self):
         thread = Thread(target=self.capture_state)
@@ -316,6 +349,31 @@ class TrackmaniaCapture:
         elif gas == 0.0 and brake > 0.0 and steer > 0.0:
             state = 8
         return state
+
+    '''def get_state(self):
+        left = keyboard.
+        left = keyboard.is_pressed(Key.left)
+        right = keyboard.is_pressed(Key.right)
+        up = keyboard.is_pressed(Key.up)
+        down = keyboard.is_pressed(Key.down)
+        if not left and not right and not up and not down:
+            return 0
+        elif left and not right and not up and not down:
+            return 1
+        elif not left and right and not up and not down:
+            return 2
+        elif not left and not right and up and not down:
+            return 3
+        elif not left and not right and not up and down:
+            return 4
+        elif left and not right and up and not down:
+            return 5
+        elif not left and right and up and not down:
+            return 6
+        elif left and not right and not up and down:
+            return 7
+        elif not left and right and not up and down:
+            return 8'''
 
     def set_state(self, state):
         if state == 0:
@@ -368,7 +426,11 @@ class TrackmaniaCapture:
         raw = self.root.get_image(0, 0, WIDTH, HEIGHT, X.ZPixmap, 0xffffffff)
         image = Image.frombytes("RGB", (WIDTH, HEIGHT), raw.data, "raw", "BGRX")
         # downscale, nearest neighbor
-        image = image.resize((OUTPUT_WIDTH, OUTPUT_HEIGHT), Image.NEAREST)
+        #image = image.resize((OUTPUT_WIDTH, OUTPUT_HEIGHT), Image.NEAREST)
+        # downscale, bilinear
+        #image = image.resize((OUTPUT_WIDTH, OUTPUT_HEIGHT), Image.BILINEAR)
+        # downscale, bicubic
+        image = image.resize((OUTPUT_WIDTH, OUTPUT_HEIGHT), Image.BICUBIC)
         if len(self.frame_history) < self.frame_stack:
             for i in range(self.frame_stack):
                 self.frame_history.append(image)
@@ -456,7 +518,10 @@ class TrackmaniaCapture:
             action = select_action(prev_state, self.frame_history, self.cur_t)
             if not (isinstance(action, list) or isinstance(action, numpy.ndarray)) or not len(action) == 1 or torch.is_tensor(action[0]):
                 print(f"ACTION SHOULD BE LIST WITH ONE ELEMENT ({action})")
-            self.set_state(action)
+            if not self.manual:
+                self.set_state(action)
+            else:
+                self.set_state(0)
 
             time_since_last_checkpoint = time.time() - self.last_checkpoint_time
 
@@ -488,6 +553,7 @@ class TrackmaniaCapture:
         timer = Timer(self.time_step, end_step)
         timer.start()
 
+        self.finished = False
         print("waiting end of episode")
         self.barrier.wait()
         print("ep finished, total reward: " + str(self.total_reward))
@@ -500,6 +566,7 @@ class TrackmaniaCapture:
             keyboard.tap(Key.delete)
         self.next_checkpoint = 0
         self.reward = 0.0
+        self.last_speed = 0.0
         self.total_reward = 0.0
         self.reward_distance = 0.0
         self.min_distance = float('inf')
@@ -512,22 +579,25 @@ class TrackmaniaCapture:
             keyboard.tap(Key.enter)
             time.sleep(0.1)
             keyboard.tap(Key.enter)
-            self.finished = False
+            self.start_time = time.time()
 
-    def memory_to_video(self, mem, filename):
+    def memory_to_video(self, mem, filename, img_transform=None, output_size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)):
         fps = int(1.0 / self.time_step)
-        cmd = f'ffmpeg -f rawvideo -pix_fmt rgb24 -framerate {fps} -s {OUTPUT_WIDTH*2}x{OUTPUT_HEIGHT} -i - -an -vcodec libx264 -preset ultrafast -pix_fmt yuv420p {filename}'
+        cmd = f'ffmpeg -f rawvideo -pix_fmt rgb24 -framerate {fps} -s {output_size[0]}x{output_size[1]} -i - -an -vcodec libx264 -preset ultrafast -pix_fmt yuv420p {filename}'
         p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE)
         for i in range(len(mem)):
-            state, screenshot, action, next_state, next_screenshot, reward = mem.memory[i]
+            state, screenshot, action, next_state, next_screenshot, reward, done = mem.memory[i]
             speed = state[0]
             gas = state[3]
             steer = state[2]
-            img3 = Image.new('RGB', (OUTPUT_WIDTH*2, OUTPUT_HEIGHT))
+            img3 = Image.new('RGB', (output_size[0], output_size[1]))
+            if img_transform is not None:
+                screenshot = img_transform(screenshot)
+                next_screenshot = img_transform(next_screenshot)
             img3.paste(screenshot, (0,0))
-            img3.paste(next_screenshot, (OUTPUT_WIDTH,0))
+            #img3.paste(next_screenshot, (output_size[0],0))
             d = ImageDraw.Draw(img3)
-            d.text((0,0), f'speed: {speed}', fill=(255,255,255))
+            d.text((0,0), f'speed: {speed:.2f}', fill=(255,255,255))
             d.text((0,10), f'gas: {gas}', fill=(255,255,255))
             d.text((0,20), f'steer: {steer}', fill=(255,255,255))
             p.stdin.write(img3.tobytes())

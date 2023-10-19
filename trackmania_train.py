@@ -30,20 +30,22 @@ except NotImplementedError:
 git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
 
 BATCH_SIZE = 64
-LEARNING_RATE = 0.0003
+LEARNING_RATE = 0.0001
 
 FRAME_STACK = 4
 
 PICKLE_DATA = False
-PICKLE_DIR = "fpdata"
+PICKLE_DIR = "bdata"
 PICKLE_SIZE = 2000
+
+IMAGE_SIZE = 112
 
 episode_length = 90.0
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 img_transform = transforms.Compose([
-    transforms.Resize((112, 112)),
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE), interpolation=transforms.InterpolationMode.BICUBIC),
     transforms.Grayscale(1),
     transforms.ToTensor()
 ])
@@ -77,7 +79,7 @@ def collate_gather(batch):
     ss_imgs = [torch.cat([cached_img_transform(ss) for ss in framestack], dim=0) for framestack in batch.screenshot]
     actions = [torch.tensor(a) for a in batch.action]
     #rewards = [torch.tensor([r[0] / 5000.0], dtype=torch.float32) for r in batch.reward]
-    rewards = [torch.tensor([r[0] if r[0] < 500 else r[0]/50.0], dtype=torch.float32) for r in batch.reward]
+    rewards = [torch.tensor([r[0]], dtype=torch.float32) for r in batch.reward]
     next_states = [torch.tensor(ns) for ns in batch.next_state]
     nss_imgs = [torch.cat([cached_img_transform(nss) for nss in framestack], dim=0) for framestack in batch.next_screenshot]
     #nss_imgs = pool.map(img_transform, batch.next_screenshot, chunksize=1) # slow af
@@ -92,6 +94,7 @@ def collate_stack(batch):
     reward_batch = torch.stack(rewards).to(device)
 
     max_reward = torch.abs(torch.max(reward_batch))
+    print("max reward", max_reward)
     #if max_reward > 1.0:
         #print(f"max reward should be -1 to 1, but was: {max_reward}")
 
@@ -108,7 +111,7 @@ def collate_fn(batch):
     next_states = [torch.tensor(b[3]) for b in batch]
     nss_imgs = [img_transform(b[4]) for b in batch]
 
-    rewards = [torch.tensor([b[5][0] / 5000.0]) for b in batch]
+    rewards = [torch.tensor([b[5][0]]) for b in batch]
 
     dones = [torch.tensor(b[6]) for b in batch]
 
@@ -222,14 +225,14 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
         if len(memory) < 1000:
             continue
         #transitions = memory.sample(BATCH_SIZE)
-        if isinstance(memory, PrioritizedReplayBuffer):
+        if isinstance(memory, PrioritizedReplayBuffer): # torchrl prioritized replay buffer
             sample, info = memory.sample(BATCH_SIZE, return_info=True)
             batch_losses = actor.optimize_model(sample, info["_weight"])
             loss = torch.mean(batch_losses)
 
             priority = batch_losses.cpu().numpy()
             memory.update_priority(info["index"], priority)
-        else:
+        else: # custom prioritized replay buffer
             transitions, indices, weights = memory.sample_with_priority(BATCH_SIZE)
             #print(f"avg {numpy.average(weights)}")
             #print("i ", indices)
@@ -272,7 +275,7 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
         barr.wait()
 
 
-def train_online():
+def train_online(manual=False):
     global episode
     global ep_memory
     global last_loss
@@ -284,13 +287,15 @@ def train_online():
 
     step = 0
 
-    cap = trackmania.TrackmaniaCapture(time_step=0.1, frame_stack=FRAME_STACK)
+    cap = trackmania.TrackmaniaCapture(time_step=0.1, frame_stack=FRAME_STACK, manual=manual)
     cap.start_state_capture()
     time.sleep(1)
 
     def select_action(state, screenshots, t):
         imgs = [img_transform(screenshot).unsqueeze(0) for screenshot in screenshots]
         return actor.select_action(state, imgs, t)
+
+    actor.set_episode(episode)
 
     ep_memory, total_reward = cap.capture_episode(episode_length, select_action)
 
@@ -385,13 +390,41 @@ if __name__ == "__main__":
     args.add_argument("--from_pickle", type=str, default=None)
     args.add_argument("--preload_pickle", type=str, default=None)
     args.add_argument("--eps", type=float, default=None)
+    args.add_argument("--video", default=False, action='store_true')
+    args.add_argument("--manual", default=False, action='store_true')
 
     model_path = args.parse_args().load
     episode = args.parse_args().episode
     pickle_dir = args.parse_args().from_pickle
     preload_pickle = args.parse_args().preload_pickle
+    video = args.parse_args().video
+    manual = args.parse_args().manual
 
-    actor = actor_dqn.DqnActor(trackmania.state_dim, trackmania.num_actions, 112, frame_stack=FRAME_STACK, lr=LEARNING_RATE, device=device, model_path=model_path)
+    if video:
+        if pickle_dir == None:
+            print("Need pickle to create a video")
+            exit(-1)
+        cap = trackmania.TrackmaniaCapture(time_step=0.1, frame_stack=FRAME_STACK)
+        files = os.listdir(pickle_dir)
+        # sort by episode
+        files.sort(key=lambda x: int(x.split("_")[0][2:]))
+        print(f"Loading pickle {files[0]}")
+        #data = pickle.load(open(f"{pickle_dir}/{files[0]}", "rb"))
+        data = pickle.load(open(f"{pickle_dir}/{files[-1]}", "rb"))
+        # note: only used for storage
+        mem = trackmania.ReplayMemory(len(data))
+        for d in data:
+            mem.push(*d)
+        print("Creating video")
+        img_transform = transforms.Compose([
+            transforms.Resize((IMAGE_SIZE, IMAGE_SIZE), interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.Grayscale(1),
+        ])
+        cap.memory_to_video(mem, files[0]+".mp4", img_transform=img_transform, output_size=(IMAGE_SIZE, IMAGE_SIZE))
+        print("Done")
+        exit(0)
+
+    actor = actor_dqn.DqnActor(trackmania.state_dim, trackmania.num_actions, IMAGE_SIZE, frame_stack=FRAME_STACK, lr=LEARNING_RATE, device=device, model_path=model_path)
     if args.parse_args().eps is not None:
         actor.set_epsilon(args.parse_args().eps)
     #actor = actor_sac.SacActor(trackmania.state_dim, trackmania.num_actions, 224, lr=LEARNING_RATE, device=device, model_path=model_path)
@@ -410,4 +443,4 @@ if __name__ == "__main__":
         PICKLE_DATA = False
         train_from_pickle(pickle_dir)
     else:
-        train_online()
+        train_online(manual=manual)
