@@ -99,22 +99,30 @@ class ReplayMemory(Dataset):
         return ret
     
     def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
+        #return random.sample(self.memory, batch_size)
+        # samples, indices, weights (always 1.0)
+        if self.normalized_priorities_dirty:
+            self.normalize_priorities()
+        # return uniform samples
+        indices = random.sample(range(len(self.memory)), batch_size)
+        samples = [self.memory[i] for i in indices]
+        weights = [self.weights[i] for i in indices]
+        return samples, indices, weights
 
     def sample_with_priority(self, batch_size):
         #sampler = torch.utils.data.sampler.WeightedRandomSampler(self.priorities, batch_size, replacement=False)
         if self.normalized_priorities_dirty:
             self.normalize_priorities()
 
-        indices = random.sample(range(len(self.memory)), batch_size)
-        #indices = torch.multinomial(torch.tensor(self.normalized_priorities), batch_size, replacement=False)
+        #indices = random.sample(range(len(self.memory)), batch_size)
+        indices = torch.multinomial(torch.tensor(self.normalized_priorities), batch_size, replacement=False)
         samples = [self.memory[i] for i in indices]
 
         max_weight = numpy.max(self.weights)
         # normalize weights
         #weights = [w / max_weight for w in self.weights[indices]]
-        #weights = [self.weights[i] for i in indices]
-        weights = [1.0] * batch_size
+        weights = [self.weights[i] for i in indices]
+        #weights = [1.0] * batch_size
 
         return samples, indices, weights
 

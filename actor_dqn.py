@@ -2,8 +2,8 @@ import models
 import torch
 import random
 
-HIDDEN_DIM = 256
-GAMMA = 0.99
+HIDDEN_DIM = 128
+GAMMA = 0.995
 TAU = 0.0001
 
 class DqnActor:
@@ -37,9 +37,7 @@ class DqnActor:
         self.active_net = active_net
         self.num_actions = num_actions
 
-        #self.optimizer = torch.optim.Adam(policy_net.parameters(), lr=lr, amsgrad=True)
-        # rmsprop
-        self.optimizer = torch.optim.RMSprop(policy_net.parameters(), lr=lr, alpha=0.95, eps=0.01, centered=True)
+        self.optimizer = torch.optim.Adam(policy_net.parameters(), lr=lr, amsgrad=True, weight_decay=1e-4)
 
         self.episode = 0
         self.randomness = 0.8
@@ -60,7 +58,7 @@ class DqnActor:
         if ep > 250:
             self.randomness = 0.1
 
-    def optimize_model(self, batch, weights, double_dqn=True, cql=False):
+    def optimize_model(self, batch, weights, double_dqn=False, cql=False):
         device = self.device
 
         if isinstance(batch, list) or isinstance(batch, tuple):
@@ -87,7 +85,7 @@ class DqnActor:
             logsumexp = torch.logsumexp(action_Q, dim=1)
             cql_loss = logsumexp - state_action_values
 
-        if not double_dqn:
+        if not double_dqn: # seems to work better
             # compute next state values (ignores indices from max())
             target_Q = self.target_net(next_state_batch, next_screenshot_batch).max(1)[0]
             target_Q_masked = target_Q * (1 - done_batch)

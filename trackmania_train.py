@@ -94,7 +94,6 @@ def collate_stack(batch):
     reward_batch = torch.stack(rewards).to(device)
 
     max_reward = torch.abs(torch.max(reward_batch))
-    print("max reward", max_reward)
     #if max_reward > 1.0:
         #print(f"max reward should be -1 to 1, but was: {max_reward}")
 
@@ -233,7 +232,8 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
             priority = batch_losses.cpu().numpy()
             memory.update_priority(info["index"], priority)
         else: # custom prioritized replay buffer
-            transitions, indices, weights = memory.sample_with_priority(BATCH_SIZE)
+            #transitions, indices, weights = memory.sample_with_priority(BATCH_SIZE)
+            transitions, indices, weights = memory.sample(BATCH_SIZE)
             #print(f"avg {numpy.average(weights)}")
             #print("i ", indices)
             batch = trackmania.Transition(*zip(*transitions))
