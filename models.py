@@ -100,14 +100,15 @@ class DQN(nn.Module):
         self.conv = ConvNet(grayscale=grayscale)
         in_channels = 1 if grayscale else 3
         final_conv_size = self.conv(torch.zeros(1, in_channels, image_dim, image_dim)).shape[1]
-        self.fc1 = nn.Linear(state_dim + final_conv_size, num_hidden*4)
-        self.bn1 = nn.BatchNorm1d(num_hidden*4)
-        self.fc2 = nn.Linear(num_hidden*4, num_hidden*2)
-        self.bn2 = nn.BatchNorm1d(num_hidden*2)
-        self.fc3 = nn.Linear(num_hidden*2, num_hidden)
-        self.bn3 = nn.BatchNorm1d(num_hidden)
-        self.fc4 = nn.Linear(num_hidden, num_actions)
-
+        self.fc1 = nn.Linear(state_dim + final_conv_size, num_hidden*8)
+        self.bn1 = nn.BatchNorm1d(num_hidden*8)
+        self.fc2 = nn.Linear(num_hidden*8, num_hidden*4)
+        self.bn2 = nn.BatchNorm1d(num_hidden*4)
+        self.fc3 = nn.Linear(num_hidden*4, num_hidden*2)
+        self.bn3 = nn.BatchNorm1d(num_hidden*2)
+        self.fc4 = nn.Linear(num_hidden*2, num_actions)
+        self.bn4 = nn.BatchNorm1d(num_actions)
+        self.fc5 = nn.Linear(num_hidden, num_actions)
 
     def forward(self, state, screen):
         x = self.conv(screen)
@@ -122,6 +123,9 @@ class DQN(nn.Module):
         x = self.bn3(x)
         x = nn.functional.relu(x)
         x = self.fc4(x)
+        x = self.bn4(x)
+        x = nn.functional.relu(x)
+        x = self.fc5(x)
         return x
 
 class SAC(nn.Module):
