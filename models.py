@@ -100,11 +100,11 @@ class DQN(nn.Module):
         self.conv = ConvNet(grayscale=grayscale)
         in_channels = 1 if grayscale else 3
         final_conv_size = self.conv(torch.zeros(1, in_channels, image_dim, image_dim)).shape[1]
-        self.fc1 = nn.Linear(state_dim + final_conv_size, num_hidden)
-        self.bn1 = nn.BatchNorm1d(num_hidden)
-        self.fc2 = nn.Linear(num_hidden, num_hidden)
-        self.bn2 = nn.BatchNorm1d(num_hidden)
-        self.fc3 = nn.Linear(num_hidden, num_hidden)
+        self.fc1 = nn.Linear(state_dim + final_conv_size, num_hidden*4)
+        self.bn1 = nn.BatchNorm1d(num_hidden*4)
+        self.fc2 = nn.Linear(num_hidden*4, num_hidden*2)
+        self.bn2 = nn.BatchNorm1d(num_hidden*2)
+        self.fc3 = nn.Linear(num_hidden*2, num_hidden)
         self.bn3 = nn.BatchNorm1d(num_hidden)
         self.fc4 = nn.Linear(num_hidden, num_actions)
 
