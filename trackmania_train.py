@@ -232,8 +232,8 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
             priority = batch_losses.cpu().numpy()
             memory.update_priority(info["index"], priority)
         else: # custom prioritized replay buffer
-            #transitions, indices, weights = memory.sample_with_priority(BATCH_SIZE)
-            transitions, indices, weights = memory.sample(BATCH_SIZE)
+            transitions, indices, weights = memory.sample_with_priority(BATCH_SIZE)
+            #transitions, indices, weights = memory.sample(BATCH_SIZE)
             #print(f"avg {numpy.average(weights)}")
             #print("i ", indices)
             batch = trackmania.Transition(*zip(*transitions))
