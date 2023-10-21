@@ -37,7 +37,7 @@ class DqnActor:
         self.active_net = active_net
         self.num_actions = num_actions
 
-        self.optimizer = torch.optim.Adam(policy_net.parameters(), lr=lr, amsgrad=True, weight_decay=1e-4)
+        self.optimizer = torch.optim.Adam(policy_net.parameters(), lr=lr, amsgrad=True)
 
         self.episode = 0
         self.randomness = 0.8
