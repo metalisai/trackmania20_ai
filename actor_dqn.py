@@ -2,7 +2,7 @@ import models
 import torch
 import random
 
-HIDDEN_DIM = 128
+HIDDEN_DIM = 256
 GAMMA = 0.995
 TAU = 0.0001
 
@@ -58,7 +58,7 @@ class DqnActor:
         if ep > 250:
             self.randomness = 0.1
 
-    def optimize_model(self, batch, weights, double_dqn=False, cql=False):
+    def optimize_model(self, batch, weights, double_dqn=True, cql=False):
         device = self.device
 
         if isinstance(batch, list) or isinstance(batch, tuple):
