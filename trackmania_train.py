@@ -246,7 +246,7 @@ def process_recording(ep_memory, wait_for_training=False, skip_count=0):
             loss = torch.mean(batch_losses)
 
             priority = batch_losses.cpu().numpy()
-            memory.update_priorities(indices, priority) 
+            memory.update_priorities(indices, priority)
 
         if loss is not None:
             losses.append(loss)
@@ -399,6 +399,30 @@ if __name__ == "__main__":
     preload_pickle = args.parse_args().preload_pickle
     video = args.parse_args().video
     manual = args.parse_args().manual
+
+    if video:
+        if pickle_dir == None:
+            print("Need pickle to create a video")
+            exit(-1)
+        cap = trackmania.TrackmaniaCapture(time_step=0.1, frame_stack=FRAME_STACK)
+        files = os.listdir(pickle_dir)
+        # sort by episode
+        files.sort(key=lambda x: int(x.split("_")[0][2:]))
+        print(f"Loading pickle {files[0]}")
+        #data = pickle.load(open(f"{pickle_dir}/{files[0]}", "rb"))
+        data = pickle.load(open(f"{pickle_dir}/ep354_3acc1772-d9d0-4ee5-9cc4-e9aee09710b9.pickle", "rb"))
+        # note: only used for storage
+        mem = trackmania.ReplayMemory(len(data))
+        for d in data:
+            mem.push(*d)
+        print("Creating video")
+        img_transform = transforms.Compose([
+            transforms.Resize((112, 112)),
+            transforms.Grayscale(1),
+        ])
+        cap.memory_to_video(mem, files[0]+".mp4", img_transform=img_transform, output_size=(112, 112))
+        print("Done")
+        exit(0)
 
     if video:
         if pickle_dir == None:
