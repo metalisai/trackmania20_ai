@@ -11,11 +11,18 @@ import json
 import numpy
 from pynput.keyboard import Key, Controller
 import torch
-from Xlib import display, X
+if os.name == 'posix':
+    from Xlib import display, X
+elif os.name == 'nt':
+    import win32gui
+    import win32ui
+    import win32con
 from torch.utils.data import Dataset
 import math
 
 from collections import namedtuple
+
+print("Hellow?")
 
 keyboard = Controller()
 
@@ -43,6 +50,7 @@ Transition = namedtuple('Transition', ('state', 'screenshot', 'action', 'next_st
 
 state_dim = 8
 
+print("Loading track")
 trackInfo = json.load(open('tracks/track3.json', 'r'))
 
 #os.nice(-20)
@@ -190,8 +198,17 @@ class TrackmaniaCapture:
 
         self.reward_distance = 0.0
 
-        dsp = display.Display()
-        self.root = dsp.screen().root
+        if os.name == 'posix':
+            dsp = display.Display()
+            self.root = dsp.screen().root
+        elif os.name == 'nt':
+            self.hdesktop = win32gui.GetDesktopWindow()
+            self.desktop_dc = win32gui.GetWindowDC(self.hdesktop)
+            self.img_dc = win32ui.CreateDCFromHandle(self.desktop_dc)
+            self.mem_dc = self.img_dc.CreateCompatibleDC()
+            self.screenshot = win32ui.CreateBitmap()
+            self.screenshot.CreateCompatibleBitmap(self.img_dc, WIDTH, HEIGHT)
+            self.mem_dc.SelectObject(self.screenshot)
 
         self.min_distance = float('inf')
         self.last_distance = float('inf')
@@ -431,8 +448,15 @@ class TrackmaniaCapture:
             keyboard.press(Key.down)
 
     def capture_screen(self):
-        raw = self.root.get_image(0, 0, WIDTH, HEIGHT, X.ZPixmap, 0xffffffff)
-        image = Image.frombytes("RGB", (WIDTH, HEIGHT), raw.data, "raw", "BGRX")
+        if os.name == "posix":
+            raw = self.root.get_image(0, 0, WIDTH, HEIGHT, X.ZPixmap, 0xffffffff)
+            image = Image.frombytes("RGB", (WIDTH, HEIGHT), raw.data, "raw", "BGRX")
+        elif os.name == "nt":
+            self.mem_dc.BitBlt((0, 0), (WIDTH, HEIGHT), self.img_dc, (0, 0), win32con.SRCCOPY)
+            bmpinfo = self.screenshot.GetInfo()
+            bmpstr = self.screenshot.GetBitmapBits(True)
+            image = Image.frombytes('RGB', (bmpinfo['bmWidth'], bmpinfo['bmHeight']), bmpstr, 'raw', 'BGRX')
+            
         # downscale, nearest neighbor
         #image = image.resize((OUTPUT_WIDTH, OUTPUT_HEIGHT), Image.NEAREST)
         # downscale, bilinear
