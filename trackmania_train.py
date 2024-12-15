@@ -22,11 +22,11 @@ import git
 git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
 
 BATCH_SIZE = 64
-LEARNING_RATE = 0.0003
+LEARNING_RATE = 0.0001
 
 FRAME_STACK = 4
 
-PICKLE_DATA = True
+PICKLE_DATA = False
 PICKLE_DIR = "bdata"
 PICKLE_SIZE = 2000
 
@@ -313,7 +313,7 @@ def train_online(manual=False):
         #img = img_transform(ep_memory.memory[0].screenshot)
         #writer.add_image('image', img, 0)
 
-        if i_ep % 10 == 0:
+        if i_ep % 50 == 0:
             actor.save_model(f"model_{episode}.pth")
 
         #cap.memory_to_video(ep_memory, f'episode{episode}.mp4')

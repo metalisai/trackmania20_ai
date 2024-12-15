@@ -23,9 +23,16 @@ class ConvResNet(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.BatchNorm2d(channels),
             nn.GELU(),
+            
             ConvResBlock(channels),
-            ConvResBlock(channels),
-            ConvResBlock(channels),
+            
+            nn.Conv2d(channels, channels*2, kernel_size=3, stride=1, padding=1),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(channels*2),
+            nn.GELU(),
+            
+            ConvResBlock(channels*2),
+            ConvResBlock(channels*2),
         )
 
     def forward(self, x):
@@ -33,6 +40,63 @@ class ConvResNet(nn.Module):
         x = x.view(x.size(0), -1)
         return x
 
+class DResblock(nn.Module):
+    def __init__(self, dim):
+        super(DResblock, self).__init__()
+        self.block = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.BatchNorm1d(dim),
+            nn.GELU(),
+            nn.Linear(dim, dim),
+            nn.BatchNorm1d(dim),
+        )
+
+    def forward(self, x):
+        output = nn.functional.gelu(self.block(x) + x)
+        return output
+
+class DuelingDQN2(nn.Module):
+    def __init__(self, state_dim, image_dim, frame_stack, num_actions, num_hidden):
+        super(DuelingDQN2, self).__init__()
+        self.num_actions = num_actions
+        self.conv = ConvResNet(in_channels=frame_stack)
+        final_conv_size = self.conv(torch.zeros(1, frame_stack, image_dim, image_dim)).shape[1]
+
+        self.state_value_block = nn.Sequential(
+            nn.Linear(state_dim + final_conv_size, num_hidden),
+            nn.BatchNorm1d(num_hidden),
+            nn.GELU(),
+            DResblock(num_hidden),
+            DResblock(num_hidden),
+            DResblock(num_hidden),
+            DResblock(num_hidden),
+            nn.Linear(num_hidden, 1)
+        )
+
+        self.advantage_block = nn.Sequential(
+            nn.Linear(state_dim + final_conv_size, num_hidden),
+            nn.BatchNorm1d(num_hidden),
+            nn.GELU(),
+            DResblock(num_hidden),
+            DResblock(num_hidden),
+            DResblock(num_hidden),
+            DResblock(num_hidden),
+            nn.Linear(num_hidden, num_actions)
+        )
+        
+        self.v_fc1 = nn.Linear(state_dim, state_dim)
+
+    def forward(self, state, screen):
+        x = self.conv(screen)
+        state = self.v_fc1(state)
+        x = torch.cat([x, state], dim=1)
+
+        v = self.state_value_block(x)
+        a = self.advantage_block(x)
+        q = v + a - a.mean(dim=1, keepdim=True)
+        return q
+      
+      
 # ConvNet for DQN
 
 # input_shape: (batch_size, 3, 224, 224)
@@ -65,61 +129,6 @@ class ConvNet(nn.Module):
         x = nn.functional.relu(x)
         x = x.view(x.size(0), -1)
         return x
-
-class DResblock(nn.Module):
-    def __init__(self, dim):
-        super(DResblock, self).__init__()
-        self.block = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.BatchNorm1d(dim),
-            nn.GELU(),
-            nn.Linear(dim, dim),
-            nn.BatchNorm1d(dim),
-            nn.GELU(),
-        )
-
-    def forward(self, x):
-        input = x
-        output = self.block(x) + input
-        return output
-
-class DuelingDQN2(nn.Module):
-    def __init__(self, state_dim, image_dim, frame_stack, num_actions, num_hidden):
-        super(DuelingDQN2, self).__init__()
-        self.num_actions = num_actions
-        self.conv = ConvResNet(in_channels=frame_stack)
-        final_conv_size = self.conv(torch.zeros(1, frame_stack, image_dim, image_dim)).shape[1]
-
-        self.state_value_block = nn.Sequential(
-            nn.Linear(state_dim + final_conv_size, num_hidden),
-            nn.BatchNorm1d(num_hidden),
-            nn.GELU(),
-            DResblock(num_hidden),
-            DResblock(num_hidden),
-            DResblock(num_hidden),
-            DResblock(num_hidden),
-            nn.Linear(num_hidden, 1)
-        )
-
-        self.advantage_block = nn.Sequential(
-            nn.Linear(state_dim + final_conv_size, num_hidden),
-            nn.BatchNorm1d(num_hidden),
-            nn.GELU(),
-            DResblock(num_hidden),
-            DResblock(num_hidden),
-            DResblock(num_hidden),
-            DResblock(num_hidden),
-            nn.Linear(num_hidden, num_actions)
-        )
-
-    def forward(self, state, screen):
-        x = self.conv(screen)
-        x = torch.cat([x, state], dim=1)
-
-        v = self.state_value_block(x)
-        a = self.advantage_block(x)
-        q = v + a - a.mean(dim=1, keepdim=True)
-        return q
 
 class DuelingDQN(nn.Module):
     def __init__(self, state_dim, image_dim, frame_stack, num_actions, num_hidden):
